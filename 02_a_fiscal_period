@@ -1,0 +1,32 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Nov  8 11:05:38 2019
+
+@author: user
+"""
+
+from bs4 import BeautifulSoup
+import pandas as pd
+
+f = open(r"C:\Users\user\Desktop\fiscal_year_end.txt", 'w', encoding='utf-8')  # txt로 출력
+
+df = pd.read_excel(r"C:\Users\user\Desktop\temp.xlsx", sheet_name= "Sheet1")
+
+for i in range(len(df["j"])):
+    
+    location = r"C:\Users\user\Desktop\scraping\사업보고서\A1_2018" + "\\" + df["j"][i]
+    
+    html = open(location, 'r', encoding='utf-8')
+    source_code = html.read() 
+    
+    first_soup = BeautifulSoup(source_code, "html.parser")
+    
+    k = first_soup.find_all("table")[0].text.replace('\n', "").replace(" ","")
+        
+    result = str(df["j"][i]) + "＃" + k
+    
+    f.writelines(result + "\n")
+    
+    print(result)  # visual aid
+
+f.close()
