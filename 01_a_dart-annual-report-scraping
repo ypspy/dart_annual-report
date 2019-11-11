@@ -1,0 +1,190 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sat Oct 19 23:37:29 2019
+
+@author: user
+"""
+
+# 건당 추출시간 및 전체 소요시간 측정 (optional)
+import time
+
+# 웹사이트에 접근하고, HTML에서 필요한 정보 추출
+import requests 
+from bs4 import BeautifulSoup
+import re
+import os.path
+
+# DART의 입수 대상 기간, 보고서 리스트에 접근 → page 단위로 Loop
+
+i = 1
+loop_key = 9999
+
+while i <= loop_key:
+    annual_report_list = "http://dart.fss.or.kr/dsab001/search.ax"
+    data = {  'currentPage': i,  # 현재 페이지 최종적으로 루프를 돌릴 대상 (1+i)
+              'maxResults': '15',
+              'maxLinks': '10',
+              'sort': 'date',
+              'series': 'desc',
+              'textCrpCik': '',
+              'textCrpNm': '',
+              'finalReport': 'recent',
+              'startDate': '20190101',  # 입수시작일 (조정)
+              'endDate': '20191030',  # 입수종료일 (조정)
+              'publicType': 'A001',  # 상세유형 A001:사업보고서, A002:반기보고서, A003:분기보고서 (출처: DART 오픈API 개발가이드)
+           }
+    try:
+        company_list = requests.post(annual_report_list, data=data)
+    except ConnectionError:
+        time.sleep(900)
+        company_list = requests.post(annual_report_list, data=data)
+   
+    first_soup = BeautifulSoup(company_list.content, "html.parser")
+    
+    target_text = first_soup('p', {"class", "page_info"})[0].text
+    loop_key = int(re.compile(r"\/\d+").findall(target_text)[0].replace("/",""))
+        
+    # 기업개황과 보고서 각각의 링크를 리스트에 저장
+    list_company_info, list_report = [], [] 
+    
+    for li in first_soup.find_all("a"):
+           a = li["href"]
+           if a[1:5] == "dsae":
+               list_company_info.append("http://dart.fss.or.kr/" + a)
+           elif a[1:5] == "dsaf":
+               list_report.append("http://dart.fss.or.kr/" + a)
+        
+    for l in range(len(list_report)):
+    
+        start_time = time.time()
+        first_loop = l
+        
+        # 기업개황정보 픽업
+        
+        try:
+            company_info = requests.post(list_company_info[first_loop])
+        except ConnectionError:
+            time.sleep(900)
+            company_info = requests.post(list_company_info[first_loop])
+        
+        company_info_soup = BeautifulSoup(company_info.content, 'html.parser')
+        table = company_info_soup.find_all("table")[0]
+        
+        i_i = first_soup.find_all('span', {"class", "nobr1"})
+        result_i = i_i[first_loop].text.strip()
+        
+        j = first_soup.find_all('td', 'cen_txt')
+        result_j = j[3 * first_loop + 1].text.strip()  # 3n+1
+        k = first_soup.find_all(string=re.compile("보고서 "))
+        try:
+            sk = k[first_loop].string
+            result_k, result_l = sk[0:5], sk[16:25]
+        except IndexError:
+            result_k, result_l = "※", "※"
+        
+        # 기업개황과 보고서 링크 리스트를 대상으로 Loop
+        
+        # 개별 기업 보고서로 이동
+        
+        try:
+            report_level_zero = requests.post(list_report[first_loop])
+        except ConnectionError:
+            time.sleep(900)
+            report_level_zero = requests.post(list_report[first_loop])        
+        
+        second_soup = BeautifulSoup(report_level_zero.content, "html.parser")
+        report_map = second_soup.find_all('option') #option tag 안에 보고서 분류 1로 가는 링크가 있음
+        
+        valid_link = []
+        valid_link_notation = [] #보고서 분류 1
+        
+        for items in report_map:
+            if items.get("value") != "null":
+                valid_link.append(items.get("value"))
+                valid_link_notation.append(items.text.split()[0]+" "+items.text.split()[1])
+        
+        # 개별 기업 보고서의 보고서 분류 1로 이동
+        
+        for j in range(len(valid_link)):
+                
+            report_link = "http://dart.fss.or.kr/dsaf001/main.do?" + valid_link[j]
+            
+            try:
+                report_level_one = requests.post(report_link)
+            except ConnectionError:
+                time.sleep(900)
+                report_level_one = requests.post(report_link)            
+            
+            third_soup = BeautifulSoup(report_level_one.content, "html.parser")
+            
+            for k in range(1, 999):
+                second_loop = k
+                
+                find_next_level = "// " + str(second_loop)
+                
+                try:
+                    start_block_cut = re.compile(find_next_level).search(third_soup.text).start()
+                    sub_block = third_soup.text[int(start_block_cut): int(start_block_cut) + 270]
+                    
+                    link_list = re.compile(r"'\S+'").findall(sub_block)
+                    
+                    # 보고서 분류 2 (보고서 분류 3과 중복)
+                    second_title = re.compile("text:.+\"\,\\n\\t\\t\\tid:")
+                    second_title = second_title.findall(sub_block)[0].replace('text: "',"").replace('",\n\t\t\tid:', "").replace("<BR>", "")
+                    second_title = "".join(second_title.split())
+                    
+                    # 개별 기업 보고서의 보고서 분류 2로 이동
+                    report_link_type = ["rcpNo=", "&dcmNo=", "&eleId=", "&offset=", "&length=", "&dtd="]
+                    
+                    report_link_type = report_link_type[0: len(link_list)]
+                    
+                    link = ""
+                    
+                    for a in range(len(link_list)):
+                        link = link + report_link_type[a] + link_list[a].replace("'","")
+                        
+                    report_link = "http://dart.fss.or.kr/report/viewer.do?" + link
+                    
+                    
+                    try:
+                        report_level_two = requests.post(report_link)
+                    except ConnectionError:
+                        time.sleep(900)
+                        report_level_two = requests.post(report_link)
+                                        
+                    fourth_soup = BeautifulSoup(report_level_two.content, "html.parser")
+                    
+                    time.sleep(2)
+                    
+                    # File naming
+                    
+                    filename = result_j + "_" \
+                    + result_l + "_" \
+                    + result_i + "_" \
+                    + table.find_all('td')[3].text.strip() + "_" \
+                    + table.find_all('td')[5].text.strip() + "_" \
+                    + table.find_all('td')[6].text.strip() + "_" \
+                    + table.find_all('td')[13].text.strip()
+            
+                    filename = filename + "_" + valid_link_notation[j] + "_" + second_title
+                    
+                    fullname = re.sub("[/\*]", "", filename)  # 나리지*온, 제이엠티/JMT 때문에 넣었음
+                    path = r'C:\Users\user\Desktop\scraping\A1_2018'
+                    fullname = os.path.join(path, fullname)
+                    
+                    file = open(fullname + ".html", "w", encoding="utf-8")
+                    
+                    try:
+                        for n in fourth_soup.contents:
+                            file.write(str(n))
+                    except AttributeError:
+                        None
+                    
+                    file.close()
+                    
+                except AttributeError:
+                    break
+            
+        procedure_duration = time.time() - start_time
+        print(procedure_duration)
+    i += 1
