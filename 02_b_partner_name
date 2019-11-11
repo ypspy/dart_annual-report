@@ -1,0 +1,47 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Nov  4 16:32:49 2019
+
+@author: user
+"""
+
+from bs4 import BeautifulSoup
+import re
+import pandas as pd
+
+f = open(r"C:\Users\user\Desktop\audit_report_date.txt", 'w', encoding='utf-8')  # txt로 출력
+
+df = pd.read_excel(r"C:\Users\user\Desktop\1. Research\1. 대학원\1. 코스웍\19년 2학기\2. 감사\발표\논문작업\1. 사업보고서 파싱 리스트 가공\A1_2019_3.xlsx", sheet_name= "Sheet1")
+
+for i in range(len(df["a"])):
+    
+    location = r"C:\Users\user\Desktop\scraping\사업보고서\A1_2019" + "\\" + df["j"][i]  # 사업보고서를 보관한 폴더 입력
+    
+    html = open(location, 'r', encoding='utf-8')
+    source_code = html.read() 
+    
+    first_soup = BeautifulSoup(source_code, "html.parser")
+    
+    audit_report_date = re.compile("\d{4}\s*[년-]\s*\d+[월-]\s*\d+[일]*")
+    
+    try:
+        audit_report_date = audit_report_date.findall(first_soup.text)
+        
+        possible_audit_date = []
+        while len(audit_report_date) > 0:
+            a = audit_report_date.pop()
+            if a[0:4] == "2019":
+                possible_audit_date.append(a)
+                
+    except IndexError:
+        possible_audit_date = "NA"
+    
+    k = possible_audit_date
+    
+    result = str(df["BRDATE"][i]) + "_" + str(df["FISCAL-YEAR-END"][i]) + "_" + str(df["c"][i]) + "_" + str(df["d"][i]) + "_" + str(df["f"][i]) + "_" + str(df["h"][i]) + "_" + str(k)
+    
+    f.writelines(result + "\n")
+    
+    print(result)
+
+f.close()
